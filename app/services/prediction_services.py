@@ -3,6 +3,9 @@ import tensorflow as tf
 import numpy as np
 import cv2
 from app.utils.image_utils import preprocess_pil_image, image_to_base64
+from app.services.model_loader import load_models
+
+MODELS = load_models()
 
 # =========================
 # Grad-CAM Implementation (FIXED)
@@ -118,16 +121,15 @@ def create_superimposed_gradcam(img, heatmap, alpha=0.4):
 
     return superimposed
 
-def predict_image(file_bytes, plant_part, models):
+def predict_image(file_bytes, plant_part="mix", models=None):
+    models = models or MODELS
     arr, original_img = preprocess_pil_image(file_bytes)
 
     liberica_votes = 0
     not_liberica_votes = 0
-
     winning_model = None
     winning_organ = None
     max_confidence = 0
-
     individual_predictions = {}
 
     if plant_part == "mix":
@@ -136,12 +138,9 @@ def predict_image(file_bytes, plant_part, models):
         models_to_use = {plant_part: models[plant_part]}
 
     for organ, model in models_to_use.items():
-
         pred = model.predict(arr, verbose=0)
-
         liberica_prob = float(pred[0][0])
         not_liberica_prob = 1 - liberica_prob
-
         predicted_class = "Liberica" if liberica_prob >= 0.5 else "Not Liberica"
         confidence = max(liberica_prob, not_liberica_prob)
 
@@ -160,22 +159,26 @@ def predict_image(file_bytes, plant_part, models):
             winning_model = model
             winning_organ = organ
 
+    # Final prediction & confidence ratio
     if plant_part == "mix":
         final_prediction = "Liberica" if liberica_votes >= 2 else "Not Liberica"
+        total_votes = liberica_votes + not_liberica_votes
+        confidence_ratio = round(max(liberica_votes, not_liberica_votes) / total_votes * 100, 2)
     else:
         final_prediction = individual_predictions[plant_part]["prediction"]
+        confidence_ratio = individual_predictions[plant_part]["confidence"]
 
     gradcam_image = None
-
     if winning_model:
         heatmap = make_gradcam_heatmap(arr, winning_model)
-
         if heatmap is not None:
             superimposed = create_superimposed_gradcam(original_img, heatmap)
             gradcam_image = image_to_base64(superimposed)
 
     return {
         "final_prediction": final_prediction,
+        "plant_part_mode": plant_part,  # <-- add this
+        "confidence_ratio": confidence_ratio,
         "gradcam_image": gradcam_image,
         "individual_predictions": individual_predictions
     }
