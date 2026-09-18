@@ -14,3 +14,6 @@ def init_mongo(app):
     client = MongoClient(mongo_uri)
 
     db = client[os.getenv("DB_NAME")]
+
+def get_db():
+    return db
